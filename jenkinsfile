@@ -1,0 +1,80 @@
+pipeline{
+    agent any
+    environment {
+        NEXUS_VERSION = "nexus3"
+        NEXUS_PROTOCOL = "http"
+        NEXUS_URL = "localhost:8081"
+        NEXUS_REPOSITORY = "maven-app"
+        NEXUS_CREDENTIAL_ID = "nexus-details"
+    }
+      stages {
+          stage('checkout') {
+              steps {
+            git branch: 'main', credentialsId: 'raju_reddy', url: 'https://github.com/rajureddynimm/maven-sonar-test-project.git'
+        }
+    }
+    stage('Build'){
+        steps{
+            bat "mvn clean package"
+        }
+    }
+      stage("SonarQube analysis") {
+          steps {
+            withEnv(['SONAR_LOGIN="admin"', 'SONAR_PASSWORD="Rajuece99"', 'SONAR_URL=hhtp://localhost:9000/']) {
+                 bat "mvn sonar:sonar"
+             }
+          }
+      }
+    
+     stage("Publish to Nexus Repository Manager") {
+            steps {
+                script {
+                    pom = readMavenPom file: "pom.xml";
+                    filesByGlob = findFiles(glob: "target/*.${pom.packaging}");
+                    echo "${filesByGlob[0].name} ${filesByGlob[0].path} ${filesByGlob[0].directory} ${filesByGlob[0].length} ${filesByGlob[0].lastModified}"
+                    artifactPath = filesByGlob[0].path;
+                    artifactExists = fileExists artifactPath;
+                    if(artifactExists) {
+                        echo "*** File: ${artifactPath}, group: ${pom.groupId}, packaging: ${pom.packaging}, version ${pom.version}";
+                        nexusArtifactUploader(
+                            nexusVersion: NEXUS_VERSION,
+                            protocol: NEXUS_PROTOCOL,
+                            nexusUrl: NEXUS_URL,
+                            groupId: pom.groupId,
+                            version: pom.version,
+                            repository: NEXUS_REPOSITORY,
+                            credentialsId: NEXUS_CREDENTIAL_ID,
+                            artifacts: [
+                                [artifactId: pom.artifactId,
+                                classifier: '',
+                                file: artifactPath,
+                                type: pom.packaging],
+                                [artifactId: pom.artifactId,
+                                classifier: '',
+                                file: "pom.xml",
+                                type: "pom"]
+                            ]
+                        );
+                    } else {
+                        error "*** File: ${artifactPath}, could not be found";
+                    }
+                }
+            }
+        }
+        stage('Deploy into tomcat server'){
+            steps{
+                            deploy adapters: [tomcat9(credentialsId: 'tomcat9', path: '', url: 'http://localhost:8080/')], contextPath: null, war: '**/*.war'
+            }
+        }
+        stage('Email Notification'){
+            steps{
+                emailext body: '''Nimmakayala Nagaraja Reddy,
+Devops Engineer,
+9100920492,
+
+Thanks and Regards
+Raju_Reddy.''', recipientProviders: [buildUser()], subject: 'Email Notification', to: 'rajureddynimm123@gmail.com'
+            }
+        }
+    }
+}
